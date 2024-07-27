@@ -1,0 +1,343 @@
+// ==UserScript==
+// @name         Janela Flutuante com Tabela de Informações
+// @namespace    http://tampermonkey.net/
+// @version      5.5
+// @description  Cria uma janela flutuante e redimensionável para preencher informações manualmente
+// @author       Você
+// @match        https://bnccompras.com/*
+// @grant        none
+// @require      https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    function criarJanelaFlutuante() {
+        const janela = document.createElement('div');
+        janela.style.borderRadius = '8px';
+        janela.style.fontFamily = 'Arial, sans-serif';
+        janela.style.position = 'fixed';
+        janela.style.top = '10%';
+        janela.style.left = '10%';
+        janela.style.width = '800px';
+        janela.style.height = '900px';
+        janela.style.backgroundColor = 'white';
+        janela.style.border = '1px solid #ccc';
+        janela.style.zIndex = '10000';
+        janela.style.resize = 'both';
+        janela.style.overflow = 'auto';
+        janela.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+        janela.style.padding = '10px';
+
+        const barraTitulo = document.createElement('div');
+        barraTitulo.style.backgroundColor = '#007BFF';
+        barraTitulo.style.color = 'white';
+        barraTitulo.style.padding = '10px';
+        barraTitulo.style.cursor = 'move';
+        barraTitulo.innerText = 'Informações dos Itens';
+
+        const btnFechar = document.createElement('button');
+        btnFechar.innerText = 'Fechar';
+        btnFechar.style.float = 'right';
+        btnFechar.style.marginRight = '10px';
+        btnFechar.addEventListener('click', () => {
+            document.body.removeChild(janela);
+        });
+
+        barraTitulo.appendChild(btnFechar);
+        janela.appendChild(barraTitulo);
+
+        const conteudoJanela = document.createElement('div');
+        conteudoJanela.innerHTML = `
+            <h2>Criado por Gutembergh</h2>
+            <label>
+                <input type="checkbox" id="fixedMarginCheckbox" />
+                Margem de Lucro Fixa
+            </label>
+            <input type="number" id="fixedMarginValue" placeholder="Margem de Lucro (%)" value="20" />
+            <button id="showHiddenRowsBtn">Reexibir Linhas Ocultadas</button>
+            <button id="saveToExcelBtn">Salvar em Excel</button>
+            <button id="clearAllBtn">Limpar Tudo</button>
+            <br /><br />
+            <label for="profileSelect">Selecionar Perfil:</label>
+            <select id="profileSelect"></select>
+            <button id="loadFromFileBtn">Carregar do Arquivo</button>
+            <table id="infoTable" border="1" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th style="width: 55px;"><b>Nº</b></th>
+                        <th style="width: 200px;"><b>ITEM</b></th>
+                        <th style="width: 60px;"><b>UND</b></th>
+                        <th style="width: 110px;"><b>CUSTO (R$)</b></th>
+                        <th style="width: 55px;"><b>(%)</b></th>
+                        <th style="width: 110px; background-color: #f0f0f0;"><b>LANCE (R$)</b></th>
+                        <th style="width: 133px;"><b>AÇÕES</b></th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+            <button id="addRowBtn">Adicionar Linha</button>
+            <input type="file" id="inputArquivo" accept=".txt" style="display: none;" />
+        `;
+        janela.appendChild(conteudoJanela);
+        document.body.appendChild(janela);
+
+        // Função para carregar dados salvos
+        function carregarDados() {
+            const dadosSalvos = JSON.parse(localStorage.getItem('tabelaDados')) || [];
+            dadosSalvos.forEach(dado => adicionarLinha(dado));
+        }
+
+        // Função para carregar dados do arquivo .txt
+         document.getElementById('loadFromFileBtn').addEventListener('click', function() {
+         document.getElementById('inputArquivo').click();
+         });
+
+         document.getElementById('inputArquivo').addEventListener('change', function(event) {
+         const file = event.target.files[0];
+         const reader = new FileReader();
+
+         reader.onload = function(e) {
+         const linhas = e.target.result.split('\n');
+         linhas.forEach(linha => {
+         const colunas = linha.split('\t');
+         if (colunas.length >= 12) {
+                const quantidade = parseFloat(colunas[3].trim().replace(',', '.')); // Converte para número
+                const custo = parseFloat(colunas[11].trim().replace(/[^\d,]/g, '').replace(',', '.')); // Converte para número
+                const quantidadeCusto = quantidade * custo; // Multiplica quantidade e custo
+
+                const formatador = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                const novoDado = {
+                    numero: colunas[0].trim(), // 1ª coluna
+                    item: colunas[1].trim(),   // 2ª coluna
+                    unidade: colunas[2].trim(), // 3ª coluna
+                    quantidade: colunas[3].trim(), // 4ª coluna
+                    custo: formatador.format(custo), // 12ª coluna formatada
+                    quantidadeCusto: formatador.format(quantidadeCusto) // Novo campo com o resultado da multiplicação formatado
+                };
+                adicionarLinha(novoDado);
+               }
+              });
+             };
+
+              reader.readAsText(file);
+            });
+
+
+
+         // Função para adicionar uma nova linha à tabela
+            function adicionarLinha(dado = {}) {
+            const newRow = document.createElement('tr');
+            newRow.style.fontWeight = 'bold';
+            newRow.style.fontStyle = 'italic';
+            newRow.innerHTML = `
+                <td><input type="number" class="item-number" style="width: 55px; border: none;" value="${dado.numero || ''}" /></td>
+
+                <td>
+                <textarea class="item-name" style="width: 200px; min-width: 200px; height: 40px; resize: vertical; border: none; overflow-y: auto;" title="Nome do Item">${dado.item || ''}</textarea><br/>
+                </td>
+
+
+                <td>
+                <input type="text" class="item-unit" style="width: 60px;" title="Unidade" value="${dado.unidade || ''}" />
+                 <span style="font-weight: bold; display: block; font-size: 12px;">Quant.: ${dado.quantidade || ''}</span>
+                </td>
+
+                <td>
+                <input type="text" class="item-cost" style="width: 110px;" value="${dado.custo || ''}" />
+                <span style="font-weight: bold; display: block; font-size: 12px;">Total: ${dado.quantidadeCusto || ''}</span>
+                </td>
+
+                <td><input type="number" class="item-margin" style="width: 55px;  border: none;" value="" /></td>
+                <td>
+                    <input type="text" class="item-bid" style="width: 110px; background-color: #f0f0f0; font-weight: bold;" value="" />
+                    <input type="checkbox" class="useCustomBidCheckbox" />
+                    <span class="bid-margin" style="width: 133px; font-weight: bold; display: block; font-size: 12px;"></span>
+                    <span style="font-weight: bold; display: block; font-size: 12px;">Total:</span>
+                </td>
+                <td>
+                    <button class="toggleColorBtn">Cor</button>
+                    <button class="hideRowBtn">Ocultar</button>
+                    <button class="deleteRowBtn">Excluir</button>
+                </td>
+            `;
+            document.querySelector('#infoTable tbody').appendChild(newRow);
+            // Adiciona eventos para calcular o lance e ações
+            newRow.querySelectorAll('.item-margin, .item-name, .item-unit').forEach(input => {
+                input.addEventListener('input', calcularLance);
+            });
+            newRow.querySelector('.item-cost').addEventListener('blur', function() {
+                formatarCusto(this);
+            });
+            newRow.querySelector('.item-bid').addEventListener('input', function() {
+                // Atualiza a margem do lance se a caixa estiver ativada
+                if (newRow.querySelector('.useCustomBidCheckbox').checked) {
+                    atualizarMargemDoLance(newRow);
+                }
+            });
+            newRow.querySelector('.useCustomBidCheckbox').addEventListener('change', function() {
+                // Atualiza a margem do lance ao ativar ou desativar a caixa
+                atualizarMargemDoLance(newRow);
+            });
+            adicionarEventosAcoes(newRow);
+        }
+
+        // Função para calcular a margem a partir do lance
+        function calcularMargem(row) {
+            const cost = parseFloat(row.querySelector('.item-cost').value.replace(/\./g, '').replace(',', '.')) || 0;
+            const bid = parseFloat(row.querySelector('.item-bid').value.replace(/\./g, '').replace(',', '.')) || 0;
+            if (cost > 0) {
+                const margin = (((bid / cost) - 1) * 100).toFixed(2);
+                row.querySelector('.item-margin').value = margin.replace('.', ',');
+            } else {
+                row.querySelector('.item-margin').value = '';
+            }
+            salvarDados(); // Salva os dados ao calcular a margem
+        }
+
+        // Função para atualizar a margem do lance
+        function atualizarMargemDoLance(row) {
+            const cost = parseFloat(row.querySelector('.item-cost').value.replace(/\./g, '').replace(',', '.')) || 0;
+            const bid = parseFloat(row.querySelector('.item-bid').value.replace(/\./g, '').replace(',', '.')) || 0;
+            const bidMarginElement = row.querySelector('.bid-margin');
+
+            if (row.querySelector('.useCustomBidCheckbox').checked && cost > 0 && bid > 0) {
+                const bidMargin = (((bid / cost) - 1) * 100).toFixed(2);
+                bidMarginElement.innerText = ` ${bidMargin.replace('.', ',')}%`;
+            } else {
+                bidMarginElement.innerText = '';
+            }
+        }
+
+        // Função para calcular o lance e aplicar a margem de lucro fixa
+        function calcularLance() {
+            const rows = document.querySelectorAll('#infoTable tbody tr');
+            const fixedMarginCheckbox = document.getElementById('fixedMarginCheckbox');
+            const fixedMarginValue = parseFloat(document.getElementById('fixedMarginValue').value) || 0;
+
+            rows.forEach(row => {
+                const cost = parseFloat(row.querySelector('.item-cost').value.replace(/\./g, '').replace(',', '.')) || 0;
+                const useCustomBidCheckbox = row.querySelector('.useCustomBidCheckbox').checked;
+                let margin;
+
+                if (useCustomBidCheckbox) {
+                    // Não calcula automaticamente se a caixa de lance personalizada estiver ativada
+                    row.querySelector('.item-bid').value = row.querySelector('.item-bid').value; // Mantém o valor atual
+                } else {
+                    margin = fixedMarginCheckbox.checked ? fixedMarginValue : (parseFloat(row.querySelector('.item-margin').value) || 0);
+                    row.querySelector('.item-margin').value = fixedMarginCheckbox.checked ? fixedMarginValue : row.querySelector('.item-margin').value; // Aplica a margem fixa se selecionada
+                    const bid = (cost + (cost * margin / 100)).toFixed(2);
+                    row.querySelector('.item-bid').value = bid.replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+                }
+                atualizarMargemDoLance(row); // Atualiza a margem do lance
+            });
+            salvarDados(); // Salva os dados ao calcular
+        }
+
+        // Formatação do custo ao perder foco
+        function formatarCusto(input) {
+            let value = input.value.replace(/\./g, '').replace(',', '.');
+            if (!isNaN(value) && value !== '') {
+                input.value = Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+            calcularLance(); // Atualiza o lance após formatação
+        }
+
+        // Adiciona eventos de ações às linhas
+        function adicionarEventosAcoes(row) {
+            row.querySelector('.toggleColorBtn').addEventListener('click', toggleColor);
+            row.querySelector('.hideRowBtn').addEventListener('click', hideRow);
+            row.querySelector('.deleteRowBtn').addEventListener('click', function() {
+                row.remove();
+                salvarDados(); // Salva os dados ao excluir uma linha
+            });
+        }
+
+        // Alterna a cor de fundo da linha
+        function toggleColor(event) {
+            const row = event.target.closest('tr');
+            if (row.style.backgroundColor === 'red') {
+                row.style.backgroundColor = 'lightgreen'; // Verde mais claro
+            } else if (row.style.backgroundColor === 'lightgreen') {
+                row.style.backgroundColor = '';
+            } else {
+                row.style.backgroundColor = 'red'; // Cor inicial
+            }
+            salvarDados(); // Salva os dados ao alterar a cor
+        }
+
+        // Função para ocultar uma linha
+        function hideRow(event) {
+            const row = event.target.closest('tr');
+            row.style.display = 'none';
+            salvarDados(); // Salva os dados ao ocultar a linha
+        }
+
+        // Função para reexibir linhas ocultas
+        function reexibirLinhasOcultas() {
+            const rows = document.querySelectorAll('#infoTable tbody tr');
+            rows.forEach(row => {
+                row.style.display = ''; // Torna a linha visível
+            });
+            salvarDados(); // Salva os dados ao reexibir linhas
+        }
+
+        // Adiciona evento para reexibir linhas ocultas
+        document.getElementById('showHiddenRowsBtn').addEventListener('click', reexibirLinhasOcultas);
+
+        // Limpar todos os dados
+        document.getElementById('clearAllBtn').addEventListener('click', function() {
+            localStorage.removeItem('tabelaDados');
+            document.querySelector('#infoTable tbody').innerHTML = '';
+            adicionarLinha(); // Adiciona uma linha inicial
+        });
+
+        // Função para salvar a tabela em formato Excel
+        function salvarEmExcel() {
+            const ws = XLSX.utils.table_to_sheet(document.getElementById('infoTable'));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Tabela de Informações');
+
+            XLSX.writeFile(wb, 'tabela_informacoes.xlsx');
+        }
+
+        document.getElementById('saveToExcelBtn').addEventListener('click', salvarEmExcel);
+
+        // Adiciona evento para adicionar linha
+        document.getElementById('addRowBtn').addEventListener('click', function() {
+            adicionarLinha();
+            salvarDados(); // Salva os dados ao adicionar uma linha
+        });
+
+        // Adiciona evento para a caixa de seleção da margem fixa
+        document.getElementById('fixedMarginCheckbox').addEventListener('change', calcularLance);
+
+        carregarDados(); // Carrega os dados ao iniciar
+
+        // Função para arrastar a janela
+        function arrastarJanela(event) {
+            const offsetX = event.clientX - janela.offsetLeft;
+            const offsetY = event.clientY - janela.offsetTop;
+
+            function mover(event) {
+                janela.style.left = `${event.clientX - offsetX}px`;
+                janela.style.top = `${event.clientY - offsetY}px`;
+            }
+
+            function soltar() {
+                document.removeEventListener('mousemove', mover);
+                document.removeEventListener('mouseup', soltar);
+            }
+
+            document.addEventListener('mousemove', mover);
+            document.addEventListener('mouseup', soltar);
+        }
+
+        barraTitulo.addEventListener('mousedown', arrastarJanela);
+    }
+
+    // Inicia a janela flutuante
+    criarJanelaFlutuante();
+})();
